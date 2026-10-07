@@ -1,0 +1,60 @@
+From: "Norton LifeLock Billing" <billing-support@account-notice.example>
+To: bobby@example.com
+Subject: Your Norton 360 subscription has been renewed - Order #NLK-884201
+Date: Tue, 06 Oct 2026 20:12:00 -0400
+Message-ID: <test-0005.toad-callback@account-notice.example>
+X-Detection-Test: callback_phishing_toad
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="BOUNDARY_TEST_0005"
+
+--BOUNDARY_TEST_0005
+Content-Type: text/plain; charset="UTF-8"
+Content-Transfer-Encoding: 7bit
+
+Dear Customer,
+
+Thank you for being a valued member. Your Norton 360 Premium plan has been
+successfully renewed and your account will be charged $429.99 for a 1-year
+subscription.
+
+Order Confirmation: NLK-884201
+Amount: $429.99
+Billing Date: October 06, 2026
+
+If you did not authorize this renewal or wish to cancel and request a full
+refund, please contact our billing helpline immediately. Our support team is
+available 24/7 to assist you.
+
+Call us toll-free at: 1-888-555-0137
+
+Please call within 24 hours to stop this charge from being applied to your
+account. After this window the amount is non-refundable.
+
+Thank you,
+Norton LifeLock Billing Department
+
+--BOUNDARY_TEST_0005
+Content-Type: text/html; charset="UTF-8"
+Content-Transfer-Encoding: 7bit
+
+<html>
+<!-- DETECTION TEST SAMPLE: callback_phishing_toad -->
+<body style="font-family: Arial, sans-serif; font-size: 14px; color:#222;">
+<p>Dear Customer,</p>
+<p>Thank you for being a valued member. Your <b>Norton 360 Premium</b> plan has
+been successfully renewed and your account will be charged <b>$429.99</b> for a
+1-year subscription.</p>
+<p><b>Order Confirmation:</b> NLK-884201<br>
+<b>Amount:</b> $429.99<br>
+<b>Billing Date:</b> October 06, 2026</p>
+<p>If you did not authorize this renewal or wish to cancel and request a full
+refund, please contact our billing helpline immediately. Our support team is
+available 24/7 to assist you.</p>
+<p style="font-size:18px;"><b>Call us toll-free at: 1-888-555-0137</b></p>
+<p>Please call within 24 hours to stop this charge from being applied to your
+account. After this window the amount is non-refundable.</p>
+<p>Thank you,<br>Norton LifeLock Billing Department</p>
+</body>
+</html>
+
+--BOUNDARY_TEST_0005--

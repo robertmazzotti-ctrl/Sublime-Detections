@@ -1,0 +1,89 @@
+name: "Callback phishing / TOAD: payment-themed lure with callback number, no link or attachment"
+description: |
+  Detects telephone-oriented attack delivery (callback phishing / TOAD). The email
+  impersonates a well-known brand (antivirus renewal, marketplace order, crypto,
+  subscription) and claims a charge was made or is about to renew, urging the victim
+  to CALL a number to dispute or cancel. There is deliberately no link and no
+  attachment, which is exactly why these bypass most secure email gateways — there
+  is nothing to detonate or reputation-check. The payload is the phone number plus
+  social-engineering pressure.
+
+  Because it carries no malicious artifact, this lure also passes cleanly through
+  other providers (Gmail, Outlook) in transit, which makes it a reliable end-to-end
+  test message: you can send it from an external account and it will actually arrive.
+type: "rule"
+severity: "medium"
+source: |
+  type.inbound
+
+  // A phone number is present (US/intl formats, incl. spaced/dotted/parenthesized)
+  and (
+    length(body.current_thread.text) < 3500   // callback lures are short
+    and (
+      regex.icontains(body.current_thread.text,
+        '(\+?\d{1,2}[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}'
+      )
+      or any(ml.nlu_classifier(body.current_thread.text).entities,
+             .name == "phone_number")
+    )
+  )
+
+  // Payment / subscription / order framing
+  and regex.icontains(body.current_thread.text,
+    'invoice', 'subscription', 'renewal', 'auto[\s-]?renew', 'order\s*(id|no|number|#|confirmation)',
+    'your\s+(order|purchase|payment|account)\s+(has|will|was)',
+    'charged', 'debited', 'billed', 'transaction', 'refund', 'premium plan',
+    'has been (placed|processed|activated|renewed)'
+  )
+
+  // Call-to-action to phone, not click (the TOAD tell)
+  and regex.icontains(body.current_thread.text,
+    'call\s+(us|our|the|now|immediately|customer|support|helpline|toll)',
+    'contact\s+(us|our\s+support|customer\s+(care|support))',
+    'to\s+(cancel|dispute|stop|decline|unsubscribe|reverse).{0,40}call',
+    'helpline', 'toll[\s-]?free', 'call\s+back', 'reach\s+us\s+at',
+    'speak\s+to\s+(a|our)\s+representative'
+  )
+
+  // Impersonated brand / urgency commonly seen in these campaigns
+  and (
+    strings.icontains(body.current_thread.text, "geek squad")
+    or strings.icontains(body.current_thread.text, "norton")
+    or strings.icontains(body.current_thread.text, "mcafee")
+    or strings.icontains(body.current_thread.text, "paypal")
+    or strings.icontains(body.current_thread.text, "best buy")
+    or strings.icontains(body.current_thread.text, "amazon")
+    or strings.icontains(body.current_thread.text, "coinbase")
+    or regex.icontains(body.current_thread.text,
+         'do\s+not\s+recognize', 'if\s+you\s+did\s+not\s+(authorize|make|place)',
+         'within\s+\d+\s+(hours|hrs)', 'immediately', 'as\s+soon\s+as\s+possible'
+    )
+  )
+
+  // No link and no attachment = classic TOAD shape (strong signal, low FP)
+  and length(body.links) == 0
+  and length(attachments) == 0
+
+  // Sender not established
+  and (
+    not profile.by_sender().solicited
+    or (
+      profile.by_sender().any_messages_malicious_or_spam
+      and not profile.by_sender().any_messages_benign
+    )
+  )
+  and not profile.by_sender().any_false_positives
+
+attack_types:
+  - "Callback Phishing"
+  - "BEC/Fraud"
+tactics_and_techniques:
+  - "Social engineering"
+  - "Impersonation: Brand"
+  - "Evasion"
+detection_methods:
+  - "Content analysis"
+  - "Natural Language Understanding"
+  - "Sender analysis"
+references:
+  - "https://www.proofpoint.com/us/threat-reference/telephone-oriented-attack-delivery-toad"
