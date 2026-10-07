@@ -1,0 +1,88 @@
+name: "SVG smuggling: scripted SVG attachment with obfuscated redirect/credential lure (2026 wave)"
+description: |
+  Targets the 2026 surge of SVG-smuggling phishing. The attachment is an SVG that
+  carries little or no actual artwork and instead embeds JavaScript that decodes an
+  obfuscated string (Base64 / XOR / char-array) and redirects the browser to a
+  credential-harvesting page, often with the recipient's address appended as a
+  tracking parameter. Campaigns deliberately declare the script as
+  'application/ecmascript' to dodge filters that only look for 'javascript', and
+  frequently pose as voicemail / fax / document-share / DocuSign notifications with
+  no link in the body (the SVG is the whole payload).
+
+  This is scoped to the smuggling TECHNIQUE, not a specific brand lure, so it should
+  catch new variants of the same mechanics. Pair with a quarantine automation; the
+  false-positive surface is low because benign senders rarely email script-bearing
+  SVGs.
+type: "rule"
+severity: "high"
+source: |
+  type.inbound
+
+  and any(attachments,
+    (
+      // SVG by extension, declared type, or sniffed type (handles .svg and .svgz,
+      // and SVGs renamed or mislabeled to slip past extension checks)
+      .file_extension in~ ("svg", "svgz")
+      or .content_type in~ ("image/svg+xml", "image/svg")
+      or .file_type == "svg"
+    )
+    and any(file.explode(.),
+      // --- The SVG actually carries script ---
+      strings.ilike(.scan.strings.raw, "*<script*")
+
+      // --- MIME-type evasion seen across the 2026 wave ---
+      or strings.icontains(.scan.strings.raw, "application/ecmascript")
+      or regex.icontains(.scan.strings.raw,
+                         'type\s*=\s*["\x27](application|text)/(ecmascript|javascript|x-javascript)["\x27]'
+      )
+
+      // --- In-SVG navigation / redirect primitives ---
+      or strings.icontains(.scan.strings.raw, "window.location")
+      or strings.icontains(.scan.strings.raw, "location.href")
+      or strings.icontains(.scan.strings.raw, "location.replace")
+      or regex.icontains(.scan.strings.raw, 'http-equiv\s*=\s*["\x27]?refresh')
+
+      // --- Payload decode/obfuscation primitives ---
+      or strings.icontains(.scan.strings.raw, "atob(")
+      or strings.icontains(.scan.strings.raw, "fromCharCode")
+      or strings.icontains(.scan.strings.raw, "unescape(")
+      or strings.icontains(.scan.strings.raw, "decodeURIComponent(")
+      or regex.icontains(.scan.strings.raw, 'charCodeAt|\^\s*0x[0-9a-f]+')  // XOR loops
+
+      // --- Script-triggering event handlers embedded in SVG markup ---
+      or regex.icontains(.scan.strings.raw,
+                         '(onload|onclick|onmouseover|onbegin|onerror)\s*=')
+
+      // --- Foreign content used to smuggle an HTML/credential form into the SVG ---
+      or strings.icontains(.scan.strings.raw, "<foreignObject")
+      or regex.icontains(.scan.strings.raw, '<(form|input|iframe)\b')
+    )
+  )
+
+  // Sender is not an established, trusted correspondent
+  and (
+    not profile.by_sender().solicited
+    or (
+      profile.by_sender().any_messages_malicious_or_spam
+      and not profile.by_sender().any_messages_benign
+    )
+  )
+  and not profile.by_sender().any_false_positives
+
+attack_types:
+  - "Credential Phishing"
+  - "Malware/Ransomware"
+tactics_and_techniques:
+  - "HTML smuggling"
+  - "Evasion"
+  - "Scripting"
+  - "Social engineering"
+detection_methods:
+  - "File analysis"
+  - "Content analysis"
+  - "Sender analysis"
+references:
+  - "https://isc.sans.edu/diary/33040"
+  - "https://aviatrix.ai/threat-research-center/new-wave-of-phishing-emails-with-svg-files-2026/"
+  - "https://www.kaseya.com/blog/svg-smuggling-voicemail-phishing-campaign"
+  - "https://blog.knowbe4.com/phishing-campaign-targets-employees-with-malicious-svg-files"
