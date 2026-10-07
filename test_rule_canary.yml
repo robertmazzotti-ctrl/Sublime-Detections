@@ -1,0 +1,21 @@
+name: "TEST RULE: subject contains detection canary string"
+description: |
+  A deliberately simple rule for learning and pipeline testing. It flags any
+  inbound message whose subject contains the string "SUBLIME-TEST-CANARY".
+
+  This is the "hello world" of MQL: one condition, no ML, no lists, no enrichment.
+  Use it to confirm end-to-end flow -- send yourself an email with the canary
+  string in the subject and verify the message gets flagged in Sublime. Once you
+  see it work, delete it or leave it disabled. It is NOT a real threat detection.
+type: "rule"
+severity: "informational"
+source: |
+  // Only look at incoming mail
+  type.inbound
+
+  // Flag the message if its subject contains our test string (case-insensitive).
+  // strings.icontains(haystack, needle) -> true/false
+  and strings.icontains(subject.subject, "SUBLIME-TEST-CANARY")
+
+tags:
+  - "Testing"
