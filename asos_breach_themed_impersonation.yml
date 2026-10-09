@@ -1,0 +1,159 @@
+name: "Brand impersonation: ASOS breach-themed lure (2026 incidents)"
+description: |
+  Detects inbound messages that use the 2026 ASOS security incidents as a lure,
+  sent from outside ASOS's own authenticated mail.
+
+  Context:
+    - Jul 28-29 2026: credential-stuffing attack on ASOS customer accounts
+      (~138,828 affected). Exposed: names, emails, addresses, phone numbers,
+      DOB, and partial card data (name, last 4, expiry). ASOS forced password
+      resets and emailed customers on Jul 30; US notice letters followed in late Aug.
+    - Oct 6 2026: unauthorized "ASOS HACKED" push notifications sent via a
+      compromised third-party customer-comms platform. Actor ("Xuanye group")
+      claims Snowflake access and pointed users to a Telegram channel.
+
+  The leaked data (name + address + DOB + last-4 + expiry) makes follow-on
+  "verify your card / claim your refund / reset your password" phishing highly
+  convincing. This rule targets that follow-on wave: ASOS brand reference +
+  breach/incident theme + at least one technical or intent signal, excluding
+  DMARC-passing mail from ASOS's own domains.
+
+  Complements generic Core Feed brand-impersonation and credential-phishing
+  rules by keying on this specific event's language (Snowflake, Xuanye,
+  compensation/settlement, forced reset). Core Feed firing alongside is
+  expected corroboration, not a conflict.
+
+  Response: monitor-first (flag + SOC review). Promote to quarantine only
+  after a 30-day backtest shows an acceptable FP rate. Expect benign noise
+  from security news digests and class-action law-firm notices about the
+  breach; see the high-trust and trust-gate exclusions.
+type: "rule"
+severity: "high"
+source: |
+  type.inbound
+
+  // --- primary signal 1: ASOS brand reference ---
+  and (
+    strings.ilike(sender.display_name, "*asos*")
+    or regex.icontains(subject.subject, '\basos\b')
+    or regex.icontains(body.current_thread.text, '\basos\b')
+    or strings.ilike(sender.email.domain.domain, "*asos*")
+    // UNVERIFIED — confirm brand label "ASOS" exists in the logo model
+    or any(ml.logo_detect(beta.message_screenshot()).brands,
+           .name == "ASOS" and .confidence in ("medium", "high")
+    )
+  )
+
+  // --- primary signal 2: breach / incident / remediation theme ---
+  and (
+    regex.icontains(subject.subject,
+      '(data|security|privacy)\s*(breach|incident|notice|alert)',
+      'unauthori[sz]ed\s*(access|activity|login)',
+      'account\s*(compromis|suspend|lock|restrict|frozen)',
+      'password\s*reset\s*(required|mandatory|urgent)',
+      '(compensation|refund|reimbursement|settlement)\s*(claim|offer|eligib|pending)?',
+      'class\s*action'
+    )
+    or regex.icontains(body.current_thread.text,
+      '(data|security)\s*(breach|incident)',
+      'snowflake',
+      'xuanye',
+      'unauthori[sz]ed\s*(third.party|access|activity)',
+      '(verify|confirm|re.?validate|update)\s*(your\s*)?(identity|account|payment|card|billing)',
+      '(compensation|refund|reimbursement)\s*(for|due|owed|of)',
+      'class.action|settlement\s*(claim|fund|payment)',
+      '(leak|publish|release)\s*(your|customer)\s*data'
+    )
+  )
+
+  // --- exclude genuine ASOS mail ---
+  // UNVERIFIED — confirm ASOS's real sending root domains via Hunt
+  // (ESP subdomains, regional TLDs) before relying on this list.
+  and not (
+    sender.email.domain.root_domain in ("asos.com", "asos.co.uk", "asos.de", "asos.fr", "asos.com.au")
+    and coalesce(headers.auth_summary.dmarc.pass, false)
+  )
+
+  // --- exclude high-trust senders (news digests, etc.) that pass DMARC ---
+  and not (
+    sender.email.domain.root_domain in $high_trust_sender_root_domains
+    and coalesce(headers.auth_summary.dmarc.pass, false)
+  )
+
+  // --- corroboration: at least one technical or intent signal ---
+  and (
+    // credential theft / PII theft / callback / extortion intent
+    // UNVERIFIED — confirm intent label names in your tenant
+    any(ml.nlu_classifier(body.current_thread.text).intents,
+        .name in ("cred_theft", "steal_pii", "callback_scam", "extortion")
+        and .confidence in ("medium", "high")
+    )
+
+    // link to a non-ASOS destination that is young, phishy, or on a free host
+    or any(filter(body.links,
+                  .href_url.domain.root_domain not in ("asos.com", "asos.co.uk", "asos.de", "asos.fr", "asos.com.au")
+           ),
+           network.whois(.href_url.domain).days_old < 30
+           or ml.link_analysis(.).credphish.disposition == "phishing"
+           or .href_url.domain.domain in $free_subdomain_hosts
+           or .href_url.domain.root_domain in $free_file_hosts
+           or .href_url.domain.root_domain in $url_shorteners
+    )
+
+    // out-of-band pivot seen in the Oct 6 incident (Telegram channel)
+    or any(body.links, .href_url.domain.root_domain in ("t.me", "telegram.me", "telegram.org"))
+    or regex.icontains(body.current_thread.text, 'telegram|t\.me/')
+
+    // reply-to points somewhere other than the sender's domain
+    or (
+      length(headers.reply_to) > 0
+      and all(headers.reply_to,
+              .email.domain.root_domain != sender.email.domain.root_domain
+      )
+    )
+
+    // callback shape: no links, no attachments, phone number present
+    or (
+      length(body.links) == 0
+      and length(attachments) == 0
+      and regex.icontains(body.current_thread.text,
+        '(call|phone|contact)[^\n]{0,40}\+?\d[\d\s().-]{8,}\d'
+      )
+    )
+  )
+
+  // --- sender trust gate ---
+  and (
+    not profile.by_sender().solicited
+    or (
+      profile.by_sender().any_messages_malicious_or_spam
+      and not profile.by_sender().any_messages_benign
+    )
+  )
+  and not profile.by_sender().any_false_positives
+attack_types:
+  - "Credential Phishing"
+  - "Callback Phishing"
+  - "Extortion"
+tactics_and_techniques:
+  - "Impersonation: Brand"
+  - "Social engineering"
+  - "Free file host"
+  - "Free subdomain host"
+  - "Out of band pivot"
+detection_methods:
+  - "Computer Vision"
+  - "Content analysis"
+  - "Header analysis"
+  - "Natural Language Understanding"
+  - "Sender analysis"
+  - "URL analysis"
+  - "Whois"
+# MITRE ATT&CK (for SIEM/case notes): T1566.002 Phishing: Spearphishing Link,
+# T1598.003 Phishing for Information: Spearphishing Link, T1656 Impersonation,
+# T1566.004 Phishing: Spearphishing Voice (callback branch)
+references:
+  - "https://bleepingcomputer.com/news/security/asos-confirms-data-breach-after-hacked-in-app-notifications"
+  - "https://cyberinsider.com/asos-credential-stuffing-attack-exposed-data-of-138828-customers/"
+  - "https://www.claimdepot.com/data-breach/asos-2026"
+  - "https://oag.ca.gov/system/files/ASOS%20US%20Sales%20LLC%20-%20CA-US%20notification.pdf"
